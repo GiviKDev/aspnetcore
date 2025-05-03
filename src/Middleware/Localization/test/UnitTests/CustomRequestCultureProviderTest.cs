@@ -72,4 +72,84 @@ public class CustomRequestCultureProviderTest
 
         return currentCulture;
     }
+
+    [Fact]
+    public async Task CustomRequestCultureProvider_StrictMode_SupportedCulture_Works()
+    {
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
+            {
+                webHostBuilder
+                    .UseTestServer()
+                    .Configure(app =>
+                    {
+                        var options = new RequestLocalizationOptions
+                        {
+                            DefaultRequestCulture = new RequestCulture("en-US"),
+                            SupportedCultures = new List<CultureInfo> { new CultureInfo("ar") },
+                            SupportedUICultures = new List<CultureInfo> { new CultureInfo("ar") },
+                            FallBackToDefaultCulture = false
+                        };
+                        options.RequestCultureProviders.Insert(0, new CustomRequestCultureProvider(context =>
+                        {
+                            var culture = GetCultureInfoFromUrl(context, options.SupportedCultures);
+                            return Task.FromResult(new ProviderCultureResult(culture, culture));
+                        }));
+                        app.UseRequestLocalization(options);
+                        app.Run(context =>
+                        {
+                            var rc = context.Features.Get<IRequestCultureFeature>()!.RequestCulture;
+                            Assert.Equal("ar", rc.Culture.Name);
+                            Assert.Equal("ar", rc.UICulture.Name);
+                            return Task.CompletedTask;
+                        });
+                    });
+            })
+            .Build();
+
+        await host.StartAsync();
+        using var server = host.GetTestServer();
+        var client = server.CreateClient();
+
+        // Act: using supported "ar" segment
+        var response = await client.GetAsync("/ar/page");
+        response.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task CustomRequestCultureProvider_StrictMode_UnsupportedCulture_Throws()
+    {
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
+            {
+                webHostBuilder
+                    .UseTestServer()
+                    .Configure(app =>
+                    {
+                        var options = new RequestLocalizationOptions
+                        {
+                            DefaultRequestCulture = new RequestCulture("en-US"),
+                            SupportedCultures = new List<CultureInfo> { new CultureInfo("ar") },
+                            SupportedUICultures = new List<CultureInfo> { new CultureInfo("ar") },
+                            FallBackToDefaultCulture = false
+                        };
+                        options.RequestCultureProviders.Insert(0, new CustomRequestCultureProvider(context =>
+                        {
+                            var culture = GetCultureInfoFromUrl(context, options.SupportedCultures);
+                            return Task.FromResult(new ProviderCultureResult(culture, culture));
+                        }));
+                        app.UseRequestLocalization(options);
+                        app.Run(context => Task.CompletedTask);
+                    });
+            })
+            .Build();
+
+        await host.StartAsync();
+        using var server = host.GetTestServer();
+        var client = server.CreateClient();
+
+        // Act & Assert: using unsupported "xx" segment
+        await Assert.ThrowsAsync<RequestCultureNotSupportedException>(
+            () => client.GetAsync("/xx/page"));
+    }
 }

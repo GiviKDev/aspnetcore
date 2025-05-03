@@ -120,4 +120,7 @@
   <data name="Exception_CulturesShouldNotBeEmpty" xml:space="preserve">
     <value>Please provide at least one culture.</value>
   </data>
+  <data name="Exception_RequestCultureNotSupported" xml:space="preserve">
+    <value>No supported culture could be determined and default fallback is disabled.</value>
+  </data>
 </root>

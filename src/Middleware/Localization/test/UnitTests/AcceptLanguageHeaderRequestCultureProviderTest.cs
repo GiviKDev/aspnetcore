@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Globalization;
+using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Localization;
@@ -178,5 +179,93 @@ public class AcceptLanguageHeaderRequestCultureProviderTest
             var response = await client.GetAsync(string.Empty);
             Assert.Equal(3, count);
         }
+    }
+
+    [Fact]
+    public async Task GetFallbackLanguage_StrictMode_SupportedHeader_Works()
+    {
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
+            {
+                webHostBuilder
+                    .UseTestServer()
+                    .Configure(app =>
+                    {
+                        app.UseRequestLocalization(new RequestLocalizationOptions
+                        {
+                            DefaultRequestCulture = new RequestCulture("en-US"),
+                            SupportedCultures = new List<CultureInfo>
+                            {
+                                    new CultureInfo("fr-FR")
+                            },
+                            SupportedUICultures = new List<CultureInfo>
+                            {
+                                    new CultureInfo("fr-FR")
+                            },
+                            RequestCultureProviders = new List<IRequestCultureProvider>
+                            {
+                                    new AcceptLanguageHeaderRequestCultureProvider()
+                            },
+                            FallBackToDefaultCulture = false
+                        });
+                        app.Run(context =>
+                        {
+                            var requestCulture = context.Features
+                                .Get<IRequestCultureFeature>()!
+                                .RequestCulture;
+                            Assert.Equal("fr-FR", requestCulture.Culture.Name);
+                            Assert.Equal("fr-FR", requestCulture.UICulture.Name);
+                            return Task.CompletedTask;
+                        });
+                    });
+            })
+            .Build();
+
+        await host.StartAsync();
+        using var server = host.GetTestServer();
+        var client = server.CreateClient();
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("fr-FR");
+
+        // Act: should not throw
+        var response = await client.GetAsync(string.Empty);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetFallbackLanguage_StrictMode_UnsupportedHeader_Throws()
+    {
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
+            {
+                webHostBuilder
+                    .UseTestServer()
+                    .Configure(app =>
+                    {
+                        app.UseRequestLocalization(new RequestLocalizationOptions
+                        {
+                            DefaultRequestCulture = new RequestCulture("en-US"),
+                            SupportedCultures = new List<CultureInfo>
+                            {
+                                    new CultureInfo("ar-YE")
+                            },
+                            SupportedUICultures = new List<CultureInfo>
+                            {
+                                    new CultureInfo("ar-YE")
+                            },
+                            FallBackToDefaultCulture = false
+                        });
+                        app.Run(context => Task.CompletedTask);
+                    });
+            })
+            .Build();
+
+        await host.StartAsync();
+        using var server = host.GetTestServer();
+        var client = server.CreateClient();
+        client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("unsupported");
+
+        // Act & Assert: strict mode should throw
+        await Assert.ThrowsAsync<RequestCultureNotSupportedException>(
+            () => client.GetAsync(string.Empty));
     }
 }

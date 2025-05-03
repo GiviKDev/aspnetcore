@@ -348,4 +348,92 @@ public class QueryStringRequestCultureProviderTest
             var response = await client.GetAsync("/page?c=FR&uic=FR");
         }
     }
+
+    [Fact]
+    public async Task GetCultureInfoFromQueryString_StrictMode_SupportedCulture()
+    {
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
+            {
+                webHostBuilder
+                    .UseTestServer()
+                    .Configure(app =>
+                    {
+                        var options = new RequestLocalizationOptions
+                        {
+                            DefaultRequestCulture = new RequestCulture("en-US"),
+                            SupportedCultures = new List<CultureInfo>
+                            {
+                                    new CultureInfo("ar-SA")
+                            },
+                            SupportedUICultures = new List<CultureInfo>
+                            {
+                                    new CultureInfo("ar-YE")
+                            },
+                            FallBackToDefaultCulture = false
+                        };
+                        var provider = new QueryStringRequestCultureProvider();
+                        options.RequestCultureProviders.Insert(0, provider);
+
+                        app.UseRequestLocalization(options);
+                        app.Run(context =>
+                        {
+                            var requestCulture = context.Features
+                                .Get<IRequestCultureFeature>()!
+                                .RequestCulture;
+                            Assert.Equal("ar-SA", requestCulture.Culture.Name);
+                            Assert.Equal("ar-YE", requestCulture.UICulture.Name);
+                            return Task.FromResult(0);
+                        });
+                    });
+            }).Build();
+
+        await host.StartAsync();
+
+        using var server = host.GetTestServer();
+        var client = server.CreateClient();
+        // Act: should not throw
+        await client.GetAsync("/page?culture=ar-SA&ui-culture=ar-YE");
+    }
+
+    [Fact]
+    public async Task GetCultureInfoFromQueryString_StrictMode_UnsupportedCulture_Throws()
+    {
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
+            {
+                webHostBuilder
+                    .UseTestServer()
+                    .Configure(app =>
+                    {
+                        var options = new RequestLocalizationOptions
+                        {
+                            DefaultRequestCulture = new RequestCulture("en-US"),
+                            SupportedCultures = new List<CultureInfo>
+                            {
+                                    new CultureInfo("ar-SA")
+                            },
+                            SupportedUICultures = new List<CultureInfo>
+                            {
+                                    new CultureInfo("ar-YE")
+                            },
+                            FallBackToDefaultCulture = false
+                        };
+                        var provider = new QueryStringRequestCultureProvider();
+                        options.RequestCultureProviders.Insert(0, provider);
+
+                        app.UseRequestLocalization(options);
+                        app.Run(context => Task.FromResult(0));
+                    });
+            }).Build();
+
+        await host.StartAsync();
+
+        using var server = host.GetTestServer();
+        var client = server.CreateClient();
+
+        // Act & Assert: strict mode should throw
+        await Assert.ThrowsAsync<RequestCultureNotSupportedException>(
+            () => client.GetAsync("/page?culture=xx&ui-culture=yy"));
+    }
 }

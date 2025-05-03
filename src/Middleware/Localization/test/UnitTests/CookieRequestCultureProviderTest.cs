@@ -2,6 +2,7 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 using System.Globalization;
+using System.Net;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Localization;
@@ -282,5 +283,110 @@ public class CookieRequestCultureProviderTest
         var write = Assert.Single(sink.Writes);
         Assert.Equal(LogLevel.Debug, write.LogLevel);
         Assert.Equal(expectedMessage, write.State.ToString());
+    }
+
+    [Fact]
+    public async Task GetCultureInfoFromCookie_StrictMode_SupportedCulture()
+    {
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
+            {
+                webHostBuilder
+                    .UseTestServer()
+                    .Configure(app =>
+                    {
+                        var options = new RequestLocalizationOptions
+                        {
+                            DefaultRequestCulture = new RequestCulture("en-US"),
+                            SupportedCultures = new List<CultureInfo>
+                            {
+                                    new CultureInfo("ar-SA")
+                            },
+                            SupportedUICultures = new List<CultureInfo>
+                            {
+                                    new CultureInfo("ar-SA")
+                            },
+                            FallBackToDefaultCulture = false
+                        };
+                        var provider = new CookieRequestCultureProvider
+                        {
+                            CookieName = "Preferences"
+                        };
+                        options.RequestCultureProviders.Insert(0, provider);
+
+                        app.UseRequestLocalization(options);
+                        app.Run(context =>
+                        {
+                            var requestCulture = context.Features
+                                .Get<IRequestCultureFeature>()!
+                                .RequestCulture;
+                            Assert.Equal("ar-SA", requestCulture.Culture.Name);
+                            Assert.Equal("ar-SA", requestCulture.UICulture.Name);
+                            return Task.CompletedTask;
+                        });
+                    });
+            })
+            .Build();
+
+        await host.StartAsync();
+        using var server = host.GetTestServer();
+        var client = server.CreateClient();
+
+        var value = CookieRequestCultureProvider.MakeCookieValue(new RequestCulture("ar-SA"));
+        client.DefaultRequestHeaders.Add(
+            HeaderNames.Cookie,
+            new CookieHeaderValue("Preferences", value).ToString());
+
+        // Act & Assert: supported culture should not throw
+        var response = await client.GetAsync(string.Empty);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetCultureInfoFromCookie_StrictMode_UnsupportedCulture_Throws()
+    {
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
+            {
+                webHostBuilder
+                    .UseTestServer()
+                    .Configure(app =>
+                    {
+                        var options = new RequestLocalizationOptions
+                        {
+                            DefaultRequestCulture = new RequestCulture("en-US"),
+                            SupportedCultures = new List<CultureInfo>
+                            {
+                                    new CultureInfo("ar-SA")
+                            },
+                            SupportedUICultures = new List<CultureInfo>
+                            {
+                                    new CultureInfo("ar-SA")
+                            },
+                            FallBackToDefaultCulture = false
+                        };
+                        var provider = new CookieRequestCultureProvider
+                        {
+                            CookieName = "Preferences"
+                        };
+                        options.RequestCultureProviders.Insert(0, provider);
+
+                        app.UseRequestLocalization(options);
+                        app.Run(context => Task.CompletedTask);
+                    });
+            })
+            .Build();
+
+        await host.StartAsync();
+        using var server = host.GetTestServer();
+        var client = server.CreateClient();
+
+        client.DefaultRequestHeaders.Add(
+            HeaderNames.Cookie,
+            new CookieHeaderValue("Preferences", "c=xx|uic=xx").ToString());
+
+        // Act & Assert: strict mode should throw
+        await Assert.ThrowsAsync<RequestCultureNotSupportedException>(
+            () => client.GetAsync(string.Empty));
     }
 }

@@ -1,1 +1,5 @@
 #nullable enable
+Microsoft.AspNetCore.Builder.RequestLocalizationOptions.FallBackToDefaultCulture.get -> bool
+Microsoft.AspNetCore.Builder.RequestLocalizationOptions.FallBackToDefaultCulture.set -> void
+Microsoft.AspNetCore.Localization.RequestCultureNotSupportedException
+Microsoft.AspNetCore.Localization.RequestCultureNotSupportedException.RequestCultureNotSupportedException() -> void

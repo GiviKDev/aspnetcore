@@ -85,6 +85,27 @@ public class RequestLocalizationOptions
     public bool FallBackToParentUICultures { get; set; } = true;
 
     /// <summary>
+    /// Gets or sets a value indicating whether to set the request culture to the
+    /// <see cref="DefaultRequestCulture"/> when no supported culture can be determined
+    /// by the configured <see cref="IRequestCultureProvider"/>s (after any parent culture fallback).
+    /// Defaults to <c>true</c>.
+    /// </summary>
+    /// <remarks>
+    /// This setting only takes effect if none of the configured providers returns a supported culture
+    /// (and after parent culture fallback, if <see cref="FallBackToParentCultures"/> is <c>true</c>). 
+    /// When <c>true</c>, the middleware will fall back to <see cref="DefaultRequestCulture"/>.
+    /// When <c>false</c>, the middleware will throw <see cref="RequestCultureNotSupportedException"/>,
+    /// terminating the pipeline.
+    /// </remarks>
+    /// <example>
+    /// If <see cref="FallBackToDefaultCulture"/> is <c>true</c> (default), and none of the
+    /// providers determines a supported culture, the request culture is set to the default
+    /// (e.g., "en-US"). If it is <c>false</c>, the middleware throws a
+    /// <see cref="RequestCultureNotSupportedException"/>, resulting in a 406 response.
+    /// </example>
+    public bool FallBackToDefaultCulture { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets a value that determines if <see cref="CultureInfo.CurrentUICulture" /> is applied to the response <c>Content-Language</c> header.
     /// </summary>
     public bool ApplyCurrentCultureToResponseHeaders { get; set; }

@@ -71,4 +71,96 @@ public class RequestLocalizationMiddlewareTest
             response.EnsureSuccessStatusCode();
         }
     }
+
+    [Fact]
+    public async Task RequestLocalizationMiddleware_StrictMode_SupportedCookie_Works()
+    {
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
+            {
+                webHostBuilder
+                    .UseTestServer()
+                    .Configure(app =>
+                    {
+                        app.UseRequestLocalization(options =>
+                        {
+                            // set up strict-mode: no fallback to default
+                            options.FallBackToDefaultCulture = false;
+
+                            // support only ar-SA
+                            var supported = new[] { "ar-SA" };
+                            options.AddSupportedCultures(supported)
+                                   .AddSupportedUICultures(supported)
+                                   .AddInitialRequestCultureProvider(new CookieRequestCultureProvider
+                                   {
+                                       CookieName = "Preferences"
+                                   });
+                        });
+
+                        app.Run(context =>
+                        {
+                            var rc = context.Features.Get<IRequestCultureFeature>()!.RequestCulture;
+                            Assert.Equal("ar-SA", rc.Culture.Name);
+                            Assert.Equal("ar-SA", rc.UICulture.Name);
+                            return Task.CompletedTask;
+                        });
+                    });
+            })
+            .Build();
+
+        await host.StartAsync();
+        using var server = host.GetTestServer();
+        var client = server.CreateClient();
+
+        // client has exactly the supported culture
+        var cookieValue = CookieRequestCultureProvider.MakeCookieValue(new RequestCulture("ar-SA"));
+        client.DefaultRequestHeaders.Add(HeaderNames.Cookie,
+            new CookieHeaderValue("Preferences", cookieValue).ToString());
+
+        // Act: should succeed
+        var response = await client.GetAsync(string.Empty);
+        response.EnsureSuccessStatusCode();
+    }
+
+    [Fact]
+    public async Task RequestLocalizationMiddleware_StrictMode_UnsupportedCookie_Throws()
+    {
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
+            {
+                webHostBuilder
+                    .UseTestServer()
+                    .Configure(app =>
+                    {
+                        app.UseRequestLocalization(options =>
+                        {
+                            options.FallBackToDefaultCulture = false;
+
+                            // support only ar-SA
+                            var supported = new[] { "ar-SA" };
+                            options.AddSupportedCultures(supported)
+                                   .AddSupportedUICultures(supported)
+                                   .AddInitialRequestCultureProvider(new CookieRequestCultureProvider
+                                   {
+                                       CookieName = "Preferences"
+                                   });
+                        });
+
+                        app.Run(context => Task.CompletedTask);
+                    });
+            })
+            .Build();
+
+        await host.StartAsync();
+        using var server = host.GetTestServer();
+        var client = server.CreateClient();
+
+        // client has an unsupported culture
+        client.DefaultRequestHeaders.Add(HeaderNames.Cookie,
+            new CookieHeaderValue("Preferences", "c=xx|uic=yy").ToString());
+
+        // Act & Assert: strict mode should throw
+        await Assert.ThrowsAsync<RequestCultureNotSupportedException>(
+            () => client.GetAsync(string.Empty));
+    }
 }

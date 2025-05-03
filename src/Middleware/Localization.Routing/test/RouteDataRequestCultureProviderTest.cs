@@ -210,4 +210,121 @@ public class RouteDataRequestCultureProviderTest
             Assert.Equal($"{expectedCulture},{expectedUICulture}", data);
         }
     }
+
+    [Theory]
+    [InlineData("{culture}/{ui-culture}/hello", "ar-SA/ar-YE/hello", "ar-SA", "ar-YE")]
+    [InlineData("{culture}/hello", "ar-SA/hello", "ar-SA", "en-US")]
+    public async Task GetCultureInfo_StrictMode_SupportedCulture_Works(
+    string routeTemplate,
+    string requestUrl,
+    string expectedCulture,
+    string expectedUICulture)
+    {
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
+            {
+                webHostBuilder
+                    .UseTestServer()
+                    .ConfigureServices(services => services.AddRouting())
+                    .Configure(app =>
+                    {
+                        app.UseRouter(routes =>
+                        {
+                            routes.MapMiddlewareRoute(routeTemplate, fork =>
+                            {
+                                var options = new RequestLocalizationOptions
+                                {
+                                    DefaultRequestCulture = new RequestCulture("en-US"),
+                                    SupportedCultures = new List<CultureInfo> { new CultureInfo("ar-SA") },
+                                    SupportedUICultures = new List<CultureInfo> { new CultureInfo("ar-YE") },
+                                    FallBackToParentCultures = false,
+                                    FallBackToParentUICultures = false,
+                                    FallBackToDefaultCulture = false
+                                };
+                                options.RequestCultureProviders = new[]
+                                {
+                                new RouteDataRequestCultureProvider { Options = options }
+                                };
+                                fork.UseRequestLocalization(options);
+                                fork.Run(async context =>
+                                {
+                                    var rc = context.Features.Get<IRequestCultureFeature>()!.RequestCulture;
+                                    await context.Response.WriteAsync($"{rc.Culture.Name},{rc.UICulture.Name}");
+                                });
+                            });
+                        });
+                    });
+            })
+            .Build();
+
+        await host.StartAsync();
+        using var server = host.GetTestServer();
+        var client = server.CreateClient();
+
+        // Act
+        var response = await client.GetAsync(requestUrl);
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var content = await response.Content.ReadAsStringAsync();
+        Assert.Equal($"{expectedCulture},{expectedUICulture}", content);
+    }
+
+    [Theory]
+    [InlineData("{culture}/{ui-culture}/hello", "unsupported/unsupported/hello")]
+    [InlineData("{culture}/hello", "xyz/hello")]
+    public async Task GetCultureInfo_StrictMode_UnsupportedCulture_Throws(
+    string routeTemplate,
+    string requestUrl)
+    {
+        using var host = new HostBuilder()
+            .ConfigureWebHost(webHostBuilder =>
+            {
+                webHostBuilder
+                    .UseTestServer()
+                    .ConfigureServices(services => services.AddRouting())
+                    .Configure(app =>
+                    {
+                        app.UseRouter(routes =>
+                        {
+                            routes.MapMiddlewareRoute(routeTemplate, fork =>
+                            {
+                                var options = new RequestLocalizationOptions
+                                {
+                                    DefaultRequestCulture = new RequestCulture("en-US"),
+                                    SupportedCultures = new List<CultureInfo>
+                                    {
+                                            new CultureInfo("ar-SA")
+                                    },
+                                    SupportedUICultures = new List<CultureInfo>
+                                    {
+                                            new CultureInfo("ar-YE")
+                                    }
+                                };
+                                options.RequestCultureProviders = new[]
+                                {
+                                        new RouteDataRequestCultureProvider()
+                                        {
+                                            Options = options
+                                        }
+                                };
+                                options.FallBackToDefaultCulture = false;
+
+                                fork.UseRequestLocalization(options);
+                                fork.Run(context => Task.CompletedTask);
+                            });
+                        });
+                    });
+            })
+            .Build();
+
+        await host.StartAsync();
+
+        using var server = host.GetTestServer();
+        var client = server.CreateClient();
+
+        // Act & Assert: TestServer will propagate the exception
+        await Assert.ThrowsAsync<RequestCultureNotSupportedException>(
+            () => client.GetAsync(requestUrl));
+    }
 }

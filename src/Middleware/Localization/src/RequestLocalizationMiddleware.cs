@@ -32,11 +32,13 @@ public class RequestLocalizationMiddleware
     /// <param name="loggerFactory">The <see cref="ILoggerFactory"/> used for logging.</param>
     public RequestLocalizationMiddleware(RequestDelegate next, IOptions<RequestLocalizationOptions> options, ILoggerFactory loggerFactory)
     {
+        ArgumentNullException.ThrowIfNull(next);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(loggerFactory);
 
-        _next = next ?? throw new ArgumentNullException(nameof(next));
-        _logger = loggerFactory?.CreateLogger<RequestLocalizationMiddleware>() ?? throw new ArgumentNullException(nameof(loggerFactory));
+        _next = next;
         _options = options.Value;
+        _logger = loggerFactory.CreateLogger<RequestLocalizationMiddleware>();
     }
 
     /// <summary>
@@ -48,7 +50,7 @@ public class RequestLocalizationMiddleware
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var requestCulture = _options.DefaultRequestCulture;
+        RequestCulture? requestCulture = null;
 
         IRequestCultureProvider? winningProvider = null;
 
@@ -107,17 +109,25 @@ public class RequestLocalizationMiddleware
             }
         }
 
-        context.Features.Set<IRequestCultureFeature>(new RequestCultureFeature(requestCulture, winningProvider));
-
-        SetCurrentThreadCulture(requestCulture);
-
-        if (_options.ApplyCurrentCultureToResponseHeaders)
+        if (_options.FallBackToDefaultCulture || requestCulture != null)
         {
-            var headers = context.Response.Headers;
-            headers.ContentLanguage = requestCulture.UICulture.Name;
+            requestCulture ??= _options.DefaultRequestCulture;
+
+            context.Features.Set<IRequestCultureFeature>(new RequestCultureFeature(requestCulture, winningProvider));
+
+            SetCurrentThreadCulture(requestCulture);
+
+            if (_options.ApplyCurrentCultureToResponseHeaders)
+            {
+                var headers = context.Response.Headers;
+                headers.ContentLanguage = requestCulture.UICulture.Name;
+            }
+
+            await _next(context);
+            return;
         }
 
-        await _next(context);
+        throw new RequestCultureNotSupportedException();
     }
 
     private static void SetCurrentThreadCulture(RequestCulture requestCulture)
